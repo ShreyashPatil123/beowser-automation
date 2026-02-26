@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NIM Assistant</title>
+    <link rel="stylesheet" href="sidepanel.css" />
+  </head>
+  <body>
+    <div id="app">
+      <!-- Header -->
+      <header class="header">
+        <div class="header-logo">
+          <span class="logo-icon">⚡</span>
+          <span class="logo-text">NIM Assistant</span>
+        </div>
+        <button id="settings-btn" class="icon-btn" title="Settings">⚙️</button>
+      </header>
+
+      <!-- Chat messages -->
+      <div id="chat-container" class="chat-container">
+        <div id="messages" class="messages"></div>
+      </div>
+
+      <!-- Input area -->
+      <div class="input-area">
+        <div class="input-wrapper">
+          <textarea
+            id="user-input"
+            placeholder="Ask anything or give me a task to complete..."
+            rows="2"
+          ></textarea>
+          <button id="send-btn" class="send-btn" title="Send (Enter)">
+            <span id="send-icon">➤</span>
+          </button>
+        </div>
+        <div class="input-hints">
+          <span class="hint">↵ Send</span>
+          <span class="hint">Shift+↵ New line</span>
+          <button id="clear-btn" class="text-btn">Clear chat</button>
+        </div>
+      </div>
+    </div>
+    <script src="sidepanel.js"></script>
+  </body>
+</html>

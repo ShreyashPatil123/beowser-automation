@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>NIM Assistant Settings</title>
+  <style>
+    body { font-family: -apple-system, sans-serif; width: 360px; padding: 24px;
+           background: #0f0f13; color: #e8e8f0; }
+    h2 { font-size: 16px; font-weight: 600; color: #76b900; margin-bottom: 20px; }
+    .field { margin-bottom: 16px; }
+    label { display: block; font-size: 12px; color: #888899; margin-bottom: 6px;
+            text-transform: uppercase; letter-spacing: 0.5px; }
+    input, select { width: 100%; padding: 10px; background: #1a1a24;
+                    border: 1px solid #2e2e42; border-radius: 6px; color: #e8e8f0;
+                    font-size: 13px; }
+    input:focus, select:focus { outline: none; border-color: #76b900; }
+    .hint { font-size: 11px; color: #555566; margin-top: 4px; }
+    button { width: 100%; padding: 10px; background: #76b900; color: #000;
+             border: none; border-radius: 6px; font-weight: 600; cursor: pointer;
+             font-size: 14px; margin-top: 8px; }
+    button:hover { background: #8fd600; }
+    .status { font-size: 12px; color: #76b900; margin-top: 12px; text-align: center; }
+    .link { font-size: 11px; color: #4a9bbe; text-align: center; margin-top: 16px; }
+    .link a { color: inherit; }
+    .separator { border: none; border-top: 1px solid #2e2e42; margin: 16px 0; }
+  </style>
+</head>
+<body>
+  <h2>⚡ NIM Assistant Settings</h2>
+
+  <div class="field">
+    <label>NVIDIA NIM API Key</label>
+    <input type="password" id="api-key" placeholder="nvapi-xxxxxxxxxxxxxxxxxxxx" />
+    <div class="hint">Get free key at <a href="https://build.nvidia.com" target="_blank" style="color:#4a9bbe">build.nvidia.com</a></div>
+  </div>
+
+  <div class="field">
+    <label>Model</label>
+    <select id="model-select">
+      <option value="meta/llama-3.3-70b-instruct">Llama 3.3 70B Instruct — Best overall ⭐</option>
+      <option value="meta/llama-3.1-8b-instruct">Llama 3.1 8B Instruct — Fastest, cheapest</option>
+      <option value="meta/llama-4-maverick-17b-128e-instruct">Llama 4 Maverick 17B — Multimodal</option>
+      <option value="nvidia/llama-3.1-nemotron-70b-instruct">Nemotron 70B — Best reasoning</option>
+      <option value="qwen/qwen2.5-coder-32b-instruct">Qwen 2.5 Coder 32B — Code tasks</option>
+      <option value="mistralai/mistral-small-3.2-24b-instruct-2506">Mistral Small 3.2 24B — Multilingual</option>
+    </select>
+  </div>
+
+  <hr class="separator" />
+
+  <div class="field">
+    <label>Max Tokens per Response</label>
+    <select id="max-tokens">
+      <option value="512">512 — Quick answers</option>
+      <option value="1024" selected>1024 — Default</option>
+      <option value="2048">2048 — Long tasks</option>
+      <option value="4096">4096 — Very long (slow)</option>
+    </select>
+  </div>
+
+  <div class="field">
+    <label>Safety — Require confirmation before:</label>
+    <label style="font-size:12px; text-transform:none; letter-spacing:0; display:flex; gap:8px; margin-top:4px">
+      <input type="checkbox" id="confirm-forms" checked /> Submitting forms
+    </label>
+    <label style="font-size:12px; text-transform:none; letter-spacing:0; display:flex; gap:8px; margin-top:4px">
+      <input type="checkbox" id="confirm-nav" /> Navigating to new URLs
+    </label>
+  </div>
+
+  <button id="save-btn">Save Settings</button>
+  <div id="status" class="status" style="display:none">✅ Settings saved!</div>
+
+  <div class="link">
+    <a href="https://docs.api.nvidia.com/nim/reference/llm-apis" target="_blank">NIM API Docs</a>
+    &nbsp;·&nbsp;
+    <a href="https://build.nvidia.com/explore/reasoning" target="_blank">Browse All Models</a>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
