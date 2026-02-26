@@ -12,6 +12,8 @@ export const NIM_MODELS = {
   LARGE: "meta/llama-4-maverick-17b-128e-instruct", // Multimodal, huge context
   CODER: "qwen/qwen2.5-coder-32b-instruct", // Best for code-heavy tasks
   REASON: "nvidia/llama-3.1-nemotron-70b-instruct", // Best for multi-step reasoning
+  LOCAL_LLAMA3: "ollama/llama3", // Local Ollama
+  LOCAL_MISTRAL: "ollama/mistral" // Local Ollama
 };
 
 /**
@@ -36,13 +38,18 @@ export async function callNIM({
   temperature = 0.2,
   onChunk = null,
 }) {
-  if (!apiKey)
+  let isOllama = model.startsWith("ollama/");
+  let actualModel = isOllama ? model.replace("ollama/", "") : model;
+  let baseUrl = isOllama ? "http://localhost:11434/v1/chat/completions" : `${NIM_BASE_URL}/chat/completions`;
+  let authHeader = isOllama ? "Bearer proxy" : `Bearer ${apiKey}`;
+
+  if (!isOllama && !apiKey)
     throw new Error(
       "NVIDIA NIM API key not set. Please configure in extension settings.",
     );
 
   const body = {
-    model,
+    model: actualModel,
     messages: systemPrompt
       ? [{ role: "system", content: systemPrompt }, ...messages]
       : messages,
@@ -56,10 +63,10 @@ export async function callNIM({
     body.tool_choice = "auto";
   }
 
-  const response = await fetch(`${NIM_BASE_URL}/chat/completions`, {
+  const response = await fetch(baseUrl, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${apiKey}`,
+      Authorization: authHeader,
       "Content-Type": "application/json",
       Accept: onChunk ? "text/event-stream" : "application/json",
     },
@@ -68,7 +75,7 @@ export async function callNIM({
 
   if (!response.ok) {
     const errText = await response.text();
-    throw new Error(`NIM API error ${response.status}: ${errText}`);
+    throw new Error(`API error ${response.status}: ${errText}`);
   }
 
   // ── STREAMING MODE ──────────────────────────────────────────

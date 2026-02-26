@@ -3,9 +3,14 @@
 // Never send the full DOM to the LLM — this is the key insight
 // ─────────────────────────────────────────────────────────────
 
+function stripNullBytes(str) {
+  if (!str) return str;
+  return str.replace(/[\u0000-\u001f]/g, "");
+}
+
 function extractPageContext() {
   // Prioritize visible, meaningful content only
-  const getText = (el) => (el?.innerText || el?.textContent || "").trim().slice(0, 200);
+  const getText = (el) => stripNullBytes((el?.innerText || el?.textContent || "").trim().slice(0, 200));
 
   // Headings — page structure signal
   const headings = [...document.querySelectorAll("h1, h2, h3")]
@@ -21,33 +26,33 @@ function extractPageContext() {
     .map((el, i) => ({
       index: i,
       tag: el.tagName,
-      type: el.type || null,
-      role: el.getAttribute("role") || null,
-      text: getText(el) || el.getAttribute("aria-label") || el.placeholder || null,
-      name: el.name || el.id || null,
-      href: el.href || null,
-      value: el.value || null,
+      type: stripNullBytes(el.type || null),
+      role: stripNullBytes(el.getAttribute("role") || null),
+      text: stripNullBytes(getText(el) || el.getAttribute("aria-label") || el.placeholder || null),
+      name: stripNullBytes(el.name || el.id || null),
+      href: stripNullBytes(el.href || null),
+      value: stripNullBytes(el.value || null),
     }))
     .filter(el => el.text || el.name || el.href);
 
   // Forms — structured capture of fillable fields
   const forms = [...document.querySelectorAll("form")].slice(0, 5).map(form => ({
-    id: form.id || null,
-    action: form.action || null,
+    id: stripNullBytes(form.id || null),
+    action: stripNullBytes(form.action || null),
     fields: [...form.querySelectorAll("input, select, textarea")].map(f => ({
-      name: f.name || f.id,
-      type: f.type,
-      placeholder: f.placeholder || null,
+      name: stripNullBytes(f.name || f.id),
+      type: stripNullBytes(f.type),
+      placeholder: stripNullBytes(f.placeholder || null),
       required: f.required,
     }))
   }));
 
   // Main content — truncated to avoid token overflow
   const mainEl = document.querySelector("main") || document.querySelector("article") || document.body;
-  const mainText = mainEl.innerText
+  const mainText = stripNullBytes(mainEl.innerText
     .replace(/\s\s+/g, " ")
     .trim()
-    .slice(0, 4000); // ~1000 tokens max
+    .slice(0, 4000)); // ~1000 tokens max
 
   return {
     url: window.location.href,
@@ -65,23 +70,49 @@ function extractPageContext() {
 // ACTION EXECUTOR — Performs actions on behalf of the agent
 // ─────────────────────────────────────────────────────────────
 
+async function findElement(hints) {
+  // Priority 1: exact CSS selector
+  if (hints.selector) {
+    try {
+      const el = document.querySelector(hints.selector);
+      if (el) return el;
+    } catch (e) {}
+  }
+  // Priority 2: element_index from interactable list
+  if (hints.element_index !== undefined) {
+    const all = document.querySelectorAll(
+      'a[href], button, input, select, textarea, [role="button"], [role="link"], [role="tab"]'
+    );
+    if (all[hints.element_index]) return all[hints.element_index];
+  }
+  // Priority 3: text content matching
+  if (hints.text) {
+    const all = document.querySelectorAll("button, a, [role='button']");
+    const match = [...all].find(el =>
+      el.innerText.trim().toLowerCase().includes(hints.text.toLowerCase())
+    );
+    if (match) return match;
+  }
+  // Priority 4: aria-label
+  if (hints.ariaLabel) {
+    try {
+      const el = document.querySelector(`[aria-label="${hints.ariaLabel}"]`);
+      if (el) return el;
+    } catch (e) {}
+  }
+  // Priority 5: coordinates
+  if (hints.x && hints.y) {
+    return document.elementFromPoint(hints.x, hints.y);
+  }
+  return null;
+}
+
 async function executeAction(action) {
   const { type } = action;
 
   try {
     if (type === "click") {
-      // Try CSS selector first, fallback to index-based, then coordinates
-      let target = null;
-      if (action.selector) target = document.querySelector(action.selector);
-      if (!target && action.element_index !== undefined) {
-        const els = document.querySelectorAll(
-          'button, a[href], input, select, textarea, [role="button"]'
-        );
-        target = els[action.element_index];
-      }
-      if (!target && action.x && action.y) {
-        target = document.elementFromPoint(action.x, action.y);
-      }
+      const target = await findElement(action);
       if (target) {
         target.scrollIntoView({ behavior: "smooth", block: "center" });
         await sleep(300);
@@ -93,18 +124,23 @@ async function executeAction(action) {
     }
 
     if (type === "fill_form") {
-      const target = document.querySelector(action.selector)
-        || [...document.querySelectorAll("input, textarea, select")]
-            .find(el => el.name === action.field_name || el.id === action.field_name);
+      let target = null;
+      if (action.selector) {
+        try { target = document.querySelector(action.selector); } catch(e) {}
+      }
+      if (!target && action.field_name) {
+        target = [...document.querySelectorAll("input, textarea, select")]
+          .find(el => el.name === action.field_name || el.id === action.field_name);
+      }
       if (target) {
         target.focus();
         target.value = action.value;
         // Fire React/Vue-compatible events
         target.dispatchEvent(new Event("input", { bubbles: true }));
         target.dispatchEvent(new Event("change", { bubbles: true }));
-        return { success: true, action: "fill_form", field: action.selector, value: action.value };
+        return { success: true, action: "fill_form", field: action.selector || action.field_name, value: action.value };
       }
-      return { success: false, error: `Field not found: ${action.selector}` };
+      return { success: false, error: `Field not found: ${action.selector || action.field_name}` };
     }
 
     if (type === "scroll") {
@@ -120,8 +156,8 @@ async function executeAction(action) {
     }
 
     if (type === "get_text") {
-      const el = document.querySelector(action.selector);
-      return { success: true, text: el ? el.innerText.trim() : null };
+      const el = await findElement(action);
+      return { success: true, text: el ? stripNullBytes(el.innerText.trim()) : null };
     }
 
     if (type === "submit_form") {
