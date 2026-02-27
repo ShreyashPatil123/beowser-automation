@@ -480,23 +480,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const broadcast = makeBroadcaster(targetPane);
     console.log("[NIM] RUN_AGENT received. Pane:", targetPane, "Msg:", userMessage);
 
-    // Find the real webpage tab (exclude extension pages and chrome:// pages)
     chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
-      let tab = tabs?.find(t => t.url && !t.url.startsWith("chrome-extension://") && !t.url.startsWith("chrome://"));
-      
-      // If active tab is an extension page, try to find any real webpage tab
-      if (!tab) {
-        console.warn("[NIM] Active tab is an extension page. Searching for a real webpage...");
-        const allTabs = await chrome.tabs.query({ currentWindow: true });
-        tab = allTabs.find(t => t.url && t.url.startsWith("http"));
-      }
-      
-      if (!tab) {
-        broadcast({ type: "error", message: "No webpage tab found. Please open a website first, then try again." });
+      const activeTab = tabs[0];
+
+      if (!activeTab || !activeTab.url) {
+        broadcast({ type: "error", message: "Cannot determine the active tab." });
         return;
       }
-      console.log("[NIM] Target tab:", tab.id, tab.url);
-      runAgentLoop(userMessage, tab.id, broadcast, overrideModel);
+
+      // Prevent execution on restricted browser pages
+      if (activeTab.url.startsWith("chrome://") || 
+          activeTab.url.startsWith("edge://") || 
+          activeTab.url.startsWith("chrome-extension://")) {
+        broadcast({ 
+          type: "error", 
+          message: "⚠️ Browser security policies prevent me from reading or interacting with new tab pages, settings, or extension pages. Please navigate to a standard website (http/https)." 
+        });
+        return;
+      }
+
+      console.log("[NIM] Target tab:", activeTab.id, activeTab.url);
+      runAgentLoop(userMessage, activeTab.id, broadcast, overrideModel);
     });
 
     sendResponse({ started: true });
