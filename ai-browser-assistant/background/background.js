@@ -138,6 +138,13 @@ const BROWSER_TOOLS = [
 
 const SYSTEM_PROMPT = `You are an intelligent browser assistant, similar to Perplexity Comet. You can understand web pages and take actions on behalf of the user.
 
+TOOL USE (CRITICAL):
+- You MUST use the provided tool functions to take actions. Do NOT describe actions in text.
+- WRONG: "I'll read the page now" → RIGHT: call read_page()
+- WRONG: "Let me click the button" → RIGHT: call click_element(...)
+- If you want to take an action, invoke the tool. Never just describe it.
+- Your FIRST action should almost always be calling read_page to understand the current page.
+
 RULES:
 1. Always call read_page FIRST before any action, unless you have just navigated and need to wait.
 2. After navigation, call wait (1000-2000ms) then read_page to see the loaded page.
@@ -306,8 +313,17 @@ Height: ${pageCtx.pageHeight}px | ScrollY: ${pageCtx.scrollY}px
     messages.push(assistantMsg);
     await memory.appendToHistory(tabId, assistantMsg);
 
-    // No tool calls → agent is done
+    // No tool calls — check if this is the first turn (model may be confused)
     if (tool_calls.length === 0) {
+      if (iterations === 1 && responseText) {
+        // Nudge: the model described an action in text instead of calling a tool
+        console.warn("[NIM] No tool calls on first turn — nudging model to use tools.");
+        messages.push({
+          role: "user",
+          content: "You must use your tool functions to take actions, not describe them in text. Please call the appropriate tool now (e.g. read_page)."
+        });
+        continue; // retry the loop
+      }
       broadcast({ type: "done", text: responseText });
       return;
     }

@@ -17,6 +17,62 @@ export const NIM_MODELS = {
 };
 
 /**
+ * Fallback parser: extract tool calls when the LLM embeds them as JSON in text
+ * instead of using the proper tool_calls SSE mechanism.
+ */
+function tryExtractToolCallsFromText(text, knownTools) {
+  const calls = [];
+
+  // Pattern 1: JSON object with "name" matching a known tool
+  // e.g., {"name": "read_page", "arguments": {}}
+  const jsonPattern = /\{[^{}]*"name"\s*:\s*"(\w+)"[^{}]*\}/g;
+  let match;
+  while ((match = jsonPattern.exec(text)) !== null) {
+    const toolName = match[1];
+    if (!knownTools.includes(toolName)) continue;
+    try {
+      const parsed = JSON.parse(match[0]);
+      calls.push({
+        id: `extracted_${calls.length}`,
+        type: "function",
+        function: {
+          name: parsed.name,
+          arguments: parsed.arguments || {},
+        },
+      });
+    } catch (e) {
+      // If the JSON is malformed, try just the name with empty args
+      calls.push({
+        id: `extracted_${calls.length}`,
+        type: "function",
+        function: { name: toolName, arguments: {} },
+      });
+    }
+  }
+
+  // Pattern 2: bare function call syntax e.g. "read_page()" or "click_element({...})"
+  if (calls.length === 0) {
+    for (const tool of knownTools) {
+      const funcPattern = new RegExp(`${tool}\\s*\\(([^)]*)\\)`, "g");
+      let fMatch;
+      while ((fMatch = funcPattern.exec(text)) !== null) {
+        let args = {};
+        if (fMatch[1].trim()) {
+          try { args = JSON.parse(fMatch[1]); } catch (e) { /* ignore */ }
+        }
+        calls.push({
+          id: `extracted_${calls.length}`,
+          type: "function",
+          function: { name: tool, arguments: args },
+        });
+      }
+    }
+  }
+
+  return calls;
+}
+
+/**
  * Call NVIDIA NIM with streaming support
  * @param {object} params
  * @param {string} params.apiKey         - Your nvapi-xxx key
@@ -147,6 +203,19 @@ export async function callNIM({
       }
       return tc;
     });
+
+    // ── FALLBACK: Extract tool calls embedded as JSON in text ──
+    if (tool_calls.length === 0 && fullText) {
+      const knownTools = [
+        "read_page", "click_element", "fill_form", "navigate",
+        "scroll", "get_text", "wait", "submit_form", "web_search"
+      ];
+      const extractedCalls = tryExtractToolCallsFromText(fullText, knownTools);
+      if (extractedCalls.length > 0) {
+        console.log("[NIM] Extracted tool calls from text fallback:", extractedCalls.map(c => c.function.name));
+        tool_calls = extractedCalls;
+      }
+    }
 
     return { text: fullText, tool_calls, finish_reason };
   }
