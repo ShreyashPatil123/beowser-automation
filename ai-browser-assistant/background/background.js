@@ -328,12 +328,18 @@ Height: ${pageCtx.pageHeight}px | ScrollY: ${pageCtx.scrollY}px
           broadcast({ type: "tool_done", tool: "read_page", summary: `"${toolResult.title || toolResult.url}"` });
 
         } else if (toolName === "click_element") {
-          toolResult = await chrome.tabs.sendMessage(tabId, {
-            type: "EXECUTE_ACTION",
-            action: { type: "click", ...toolArgs }
-          });
-          broadcast({ type: "tool_done", tool: "click_element", summary: toolArgs.description || toolArgs.selector || "element" });
-          await sleep(500);
+          const hasHint = toolArgs.selector || toolArgs.element_index !== undefined || toolArgs.text || toolArgs.ariaLabel;
+          if (!hasHint) {
+            toolResult = { success: false, error: "Missing element hints — no selector, element_index, text, or ariaLabel provided." };
+            broadcast({ type: "tool_error", tool: "click_element", error: "Missing element hints" });
+          } else {
+            toolResult = await chrome.tabs.sendMessage(tabId, {
+              type: "EXECUTE_ACTION",
+              action: { type: "click", ...toolArgs }
+            });
+            broadcast({ type: "tool_done", tool: "click_element", summary: toolArgs.description || toolArgs.selector || "element" });
+            await sleep(500);
+          }
 
         } else if (toolName === "fill_form") {
           toolResult = await chrome.tabs.sendMessage(tabId, {

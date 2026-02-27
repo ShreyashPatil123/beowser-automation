@@ -1,19 +1,23 @@
 // ─────────────────────────────────────────────────────────────
 // SIDE PANEL JAVASCRIPT
-// Single-pane architecture — compare mode removed.
-// Fixes: thinking indicator, streaming state, message ordering.
+// Vertex AI Studio-inspired Compare Mode + single-pane default.
+// Supports parallel streaming to dual panes via targetPane routing.
 // ─────────────────────────────────────────────────────────────
 
 // ── DOM REFS ─────────────────────────────────────────────────
 
-const header     = document.getElementById("header");
-const messagesEl = document.getElementById("messages");
-const userInput  = document.getElementById("user-input");
-const sendBtn    = document.getElementById("send-btn");
-const sendIcon   = document.getElementById("send-icon");
-const clearBtn   = document.getElementById("clear-btn");
-const settingsBtn= document.getElementById("settings-btn");
-const modelBadge = document.getElementById("model-badge");
+const header          = document.getElementById("header");
+const singlePane      = document.getElementById("single-pane");
+const comparePane     = document.getElementById("compare-pane");
+const userInput       = document.getElementById("user-input");
+const sendBtn         = document.getElementById("send-btn");
+const sendIcon        = document.getElementById("send-icon");
+const clearBtn        = document.getElementById("clear-btn");
+const settingsBtn     = document.getElementById("settings-btn");
+const modelBadge      = document.getElementById("model-badge");
+const compareToggle   = document.getElementById("compare-toggle");
+const compareModelSel1= document.getElementById("compare-model-1");
+const compareModelSel2= document.getElementById("compare-model-2");
 
 // ── SVG ICONS ─────────────────────────────────────────────────
 
@@ -31,12 +35,42 @@ const LOGO_MINI = `<svg width="11" height="11" viewBox="0 0 24 24" fill="#0BC5EA
   <path d="M12 2L14.5 9H22L16 13.5L18 21L12 16.5L6 21L8 13.5L2 9H9.5L12 2Z"/>
 </svg>`;
 
+// ── AVAILABLE MODELS ──────────────────────────────────────────
+
+const ALL_MODELS = [
+  { value: "meta/llama-3.3-70b-instruct",             label: "Llama 3.3 70B" },
+  { value: "meta/llama-3.1-8b-instruct",              label: "Llama 3.1 8B" },
+  { value: "meta/llama-4-maverick-17b-128e-instruct",  label: "Llama 4 Maverick" },
+  { value: "nvidia/llama-3.1-nemotron-70b-instruct",   label: "Nemotron 70B" },
+  { value: "qwen/qwen2.5-coder-32b-instruct",          label: "Qwen 2.5 Coder" },
+  { value: "ollama/llama3",                            label: "Ollama Llama3" },
+  { value: "ollama/mistral",                           label: "Ollama Mistral" },
+];
+
+const MODEL_LABELS = {};
+ALL_MODELS.forEach(m => { MODEL_LABELS[m.value] = m.label; });
+
+function populateModelSelect(selectEl, defaultVal) {
+  selectEl.innerHTML = "";
+  ALL_MODELS.forEach(m => {
+    const opt = document.createElement("option");
+    opt.value = m.value;
+    opt.textContent = m.label;
+    if (m.value === defaultVal) opt.selected = true;
+    selectEl.appendChild(opt);
+  });
+}
+
 // ── STATE ─────────────────────────────────────────────────────
 
-let isAgentRunning  = false;
-let currentTextEl   = null;   // <div> currently receiving streamed tokens
-let thinkingEl      = null;   // thinking bubble element
-let toolElements    = {};     // toolName → DOM element for update
+let isAgentRunning = false;
+let isCompareMode  = false;
+
+// Per-pane state
+const paneState = {
+  1: { textEl: null, thinkingEl: null },
+  2: { textEl: null, thinkingEl: null },
+};
 
 const TOOL_ICONS = {
   read_page:     "📄",
@@ -52,36 +86,54 @@ const TOOL_ICONS = {
 
 // ── MODEL BADGE ───────────────────────────────────────────────
 
-const MODEL_LABELS = {
-  "meta/llama-3.3-70b-instruct":               "Llama 3.3 70B",
-  "meta/llama-3.1-8b-instruct":                "Llama 3.1 8B",
-  "meta/llama-4-maverick-17b-128e-instruct":   "Llama 4 Maverick",
-  "nvidia/llama-3.1-nemotron-70b-instruct":    "Nemotron 70B",
-  "qwen/qwen2.5-coder-32b-instruct":           "Qwen 2.5 Coder",
-  "ollama/llama3":                             "Ollama Llama3",
-  "ollama/mistral":                            "Ollama Mistral",
-};
-
 chrome.storage.sync.get(["nimModel"], (data) => {
   const model = data.nimModel || "meta/llama-3.3-70b-instruct";
   modelBadge.textContent = MODEL_LABELS[model] || model.split("/").pop();
+  populateModelSelect(compareModelSel1, model);
+  // Default pane 2 to a different model
+  const secondModel = ALL_MODELS.find(m => m.value !== model)?.value || model;
+  populateModelSelect(compareModelSel2, secondModel);
 });
 
-// ── UI HELPERS ────────────────────────────────────────────────
+// ── COMPARE MODE TOGGLE ──────────────────────────────────────
 
-function scrollToBottom() {
-  messagesEl.scrollTop = messagesEl.scrollHeight;
+compareToggle.addEventListener("click", () => {
+  isCompareMode = !isCompareMode;
+  compareToggle.classList.toggle("active", isCompareMode);
+
+  if (isCompareMode) {
+    singlePane.style.display = "none";
+    comparePane.style.display = "flex";
+    modelBadge.textContent = "Compare";
+  } else {
+    singlePane.style.display = "flex";
+    comparePane.style.display = "none";
+    chrome.storage.sync.get(["nimModel"], (data) => {
+      const model = data.nimModel || "meta/llama-3.3-70b-instruct";
+      modelBadge.textContent = MODEL_LABELS[model] || model.split("/").pop();
+    });
+  }
+});
+
+// ── PANE HELPERS ──────────────────────────────────────────────
+
+function getMessagesEl(paneId) {
+  if (!isCompareMode) return document.getElementById("messages-1");
+  return document.getElementById(`compare-messages-${paneId}`);
 }
 
-function addMessage(role, content, cssClass = "") {
+function scrollToBottom(el) {
+  el.scrollTop = el.scrollHeight;
+}
+
+function addMessage(paneId, role, content, cssClass = "") {
+  const container = getMessagesEl(paneId);
   const div = document.createElement("div");
   div.className = `message ${role} ${cssClass}`.trim();
 
   const label = document.createElement("div");
   label.className = "message-label";
-  label.innerHTML = role === "user"
-    ? "You"
-    : `${LOGO_MINI} NIM Assistant`;
+  label.innerHTML = role === "user" ? "You" : `${LOGO_MINI} NIM Assistant`;
 
   const text = document.createElement("div");
   text.className = "message-text";
@@ -89,20 +141,18 @@ function addMessage(role, content, cssClass = "") {
 
   div.appendChild(label);
   div.appendChild(text);
-  messagesEl.appendChild(div);
-  scrollToBottom();
+  container.appendChild(div);
+  scrollToBottom(container);
   return { container: div, textEl: text };
 }
 
 // ── THINKING INDICATOR ────────────────────────────────────────
-// FIX: Shown immediately when agent starts so there's no blank gap.
 
-function showThinking() {
-  removeThinking(); // safety — remove old one if any
+function showThinking(paneId) {
+  removeThinking(paneId);
+  const container = getMessagesEl(paneId);
   const wrap = document.createElement("div");
   wrap.className = "thinking-bubble";
-  wrap.id = "thinking-bubble";
-
   wrap.innerHTML = `
     <div class="thinking-bubble-inner">
       <div class="thinking-label">${LOGO_MINI} NIM Assistant</div>
@@ -110,24 +160,22 @@ function showThinking() {
         <span></span><span></span><span></span>
       </div>
     </div>`;
-
-  messagesEl.appendChild(wrap);
-  scrollToBottom();
-  thinkingEl = wrap;
+  container.appendChild(wrap);
+  scrollToBottom(container);
+  paneState[paneId].thinkingEl = wrap;
 }
 
-function removeThinking() {
-  if (thinkingEl && thinkingEl.parentNode) {
-    thinkingEl.parentNode.removeChild(thinkingEl);
-  }
-  thinkingEl = null;
+function removeThinking(paneId) {
+  const el = paneState[paneId].thinkingEl;
+  if (el && el.parentNode) el.parentNode.removeChild(el);
+  paneState[paneId].thinkingEl = null;
 }
 
 // ── STREAMING ─────────────────────────────────────────────────
 
-function startStreamingMessage() {
-  // Remove thinking indicator — first real token arrived
-  removeThinking();
+function startStreamingMessage(paneId) {
+  removeThinking(paneId);
+  const container = getMessagesEl(paneId);
 
   const div = document.createElement("div");
   div.className = "message assistant";
@@ -145,44 +193,45 @@ function startStreamingMessage() {
   div.appendChild(label);
   div.appendChild(text);
   text.appendChild(cursor);
-  messagesEl.appendChild(div);
-  scrollToBottom();
+  container.appendChild(div);
+  scrollToBottom(container);
 
-  currentTextEl = text;
+  paneState[paneId].textEl = text;
   return text;
 }
 
-function appendChunk(chunk) {
-  if (!currentTextEl) startStreamingMessage();
-  const cursor = currentTextEl.querySelector(".cursor");
+function appendChunk(paneId, chunk) {
+  if (!paneState[paneId].textEl) startStreamingMessage(paneId);
+  const textEl = paneState[paneId].textEl;
+  const cursor = textEl.querySelector(".cursor");
   const textNode = document.createTextNode(chunk);
-  if (cursor) currentTextEl.insertBefore(textNode, cursor);
-  else currentTextEl.appendChild(textNode);
-  scrollToBottom();
+  if (cursor) textEl.insertBefore(textNode, cursor);
+  else textEl.appendChild(textNode);
+  scrollToBottom(textEl.closest(".messages"));
 }
 
-function finalizeStream() {
-  if (currentTextEl) {
-    const cursor = currentTextEl.querySelector(".cursor");
+function finalizeStream(paneId) {
+  const textEl = paneState[paneId].textEl;
+  if (textEl) {
+    const cursor = textEl.querySelector(".cursor");
     if (cursor) cursor.remove();
   }
-  currentTextEl = null;
+  paneState[paneId].textEl = null;
 }
 
 // ── TOOL EVENTS ───────────────────────────────────────────────
 
-function addToolEvent(toolName) {
+function addToolEvent(paneId, toolName) {
+  const container = getMessagesEl(paneId);
   const div = document.createElement("div");
   div.className = "tool-event";
   div.innerHTML = `<span class="spinner"></span> <strong>${toolName}</strong> Running…`;
-  messagesEl.appendChild(div);
-  scrollToBottom();
-  toolElements[toolName + "_" + Date.now()] = div; // unique key per call
+  container.appendChild(div);
+  scrollToBottom(container);
   return div;
 }
 
 function updateToolEvent(el, status, summary) {
-  const icon = TOOL_ICONS[status === "error" ? "" : ""] || "";
   if (status === "done") {
     el.className = "tool-event done";
     const toolName = el.querySelector("strong")?.textContent || "";
@@ -215,73 +264,84 @@ function setLoading(loading) {
 
 // ── AGENT UPDATE RECEIVER ─────────────────────────────────────
 // Receives events from background.js via chrome.runtime.sendMessage
+// Routes to correct pane via msg.targetPane
 
-// Track the last tool element added so we can update it
-let lastToolEl = null;
-let lastToolName = null;
+const lastToolElByPane = { 1: null, 2: null };
 
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg.type !== "AGENT_UPDATE") return;
 
-  const evt = msg.event;
+  const paneId = msg.targetPane || 1;
+  const evt    = msg.event;
 
-  // ── Thinking (agent just started, API call in flight) ──
   if (evt === "thinking") {
-    showThinking();
+    showThinking(paneId);
     return;
   }
 
-  // ── Streaming text token ──
   if (evt === "stream_chunk") {
-    appendChunk(msg.chunk);
+    appendChunk(paneId, msg.chunk);
     return;
   }
 
-  // ── Tool starting ──
   if (evt === "tool_start") {
-    // If thinking bubble is still up, remove it — tools are activity
-    removeThinking();
-    lastToolEl   = addToolEvent(msg.tool);
-    lastToolName = msg.tool;
+    removeThinking(paneId);
+    lastToolElByPane[paneId] = addToolEvent(paneId, msg.tool);
     return;
   }
 
-  // ── Tool finished ──
   if (evt === "tool_done") {
-    // Find the most recent tool element with this tool name
-    const el = findLastToolEl(msg.tool);
+    const el = findLastToolEl(paneId, msg.tool);
     if (el) updateToolEvent(el, "done", msg.summary || "");
     return;
   }
 
-  // ── Tool errored ──
   if (evt === "tool_error") {
-    const el = findLastToolEl(msg.tool);
+    const el = findLastToolEl(paneId, msg.tool);
     if (el) updateToolEvent(el, "error", msg.error || "");
     return;
   }
 
-  // ── Agent done ──
   if (evt === "done") {
-    finalizeStream();
-    removeThinking();
-    setLoading(false);
+    finalizeStream(paneId);
+    removeThinking(paneId);
+    // Only clear loading if both panes are done in compare mode
+    if (isCompareMode) {
+      panesDone[paneId] = true;
+      if (panesDone[1] && panesDone[2]) {
+        setLoading(false);
+        panesDone[1] = false;
+        panesDone[2] = false;
+      }
+    } else {
+      setLoading(false);
+    }
     return;
   }
 
-  // ── Error ──
   if (evt === "error") {
-    finalizeStream();
-    removeThinking();
-    addMessage("assistant", msg.message || "An unknown error occurred.", "error");
-    setLoading(false);
+    finalizeStream(paneId);
+    removeThinking(paneId);
+    addMessage(paneId, "assistant", msg.message || "An unknown error occurred.", "error");
+    if (isCompareMode) {
+      panesDone[paneId] = true;
+      if (panesDone[1] && panesDone[2]) {
+        setLoading(false);
+        panesDone[1] = false;
+        panesDone[2] = false;
+      }
+    } else {
+      setLoading(false);
+    }
     return;
   }
 });
 
-// Find the last tool-event element for a given tool name
-function findLastToolEl(toolName) {
-  const all = messagesEl.querySelectorAll(".tool-event");
+const panesDone = { 1: false, 2: false };
+
+function findLastToolEl(paneId, toolName) {
+  const container = getMessagesEl(paneId);
+  const all = container.querySelectorAll(".tool-event");
   for (let i = all.length - 1; i >= 0; i--) {
     const strong = all[i].querySelector("strong");
     if (strong && strong.textContent.trim() === toolName) return all[i];
@@ -295,27 +355,58 @@ async function sendMessage() {
   const text = userInput.value.trim();
   if (!text || isAgentRunning) return;
 
-  // Reset streaming state for new turn
-  currentTextEl = null;
-  toolElements  = {};
-  lastToolEl    = null;
-  lastToolName  = null;
+  // Reset per-pane streaming state
+  paneState[1].textEl = null;
+  paneState[2].textEl = null;
+  lastToolElByPane[1] = null;
+  lastToolElByPane[2] = null;
+  panesDone[1] = false;
+  panesDone[2] = false;
 
-  addMessage("user", text);
+  setLoading(true);
   userInput.value = "";
   userInput.style.height = "auto";
-  setLoading(true);
 
-  try {
-    await chrome.runtime.sendMessage({
-      type:        "RUN_AGENT",
-      userMessage: text,
-      targetPane:  1,
-    });
-  } catch (err) {
-    // Background not ready — show error immediately
-    addMessage("assistant", `Connection error: ${err.message}. Try reloading the extension.`, "error");
-    setLoading(false);
+  if (isCompareMode) {
+    // Add user message to both panes
+    addMessage(1, "user", text);
+    addMessage(2, "user", text);
+
+    const model1 = compareModelSel1.value;
+    const model2 = compareModelSel2.value;
+
+    // Fire both panes in parallel
+    try {
+      chrome.runtime.sendMessage({
+        type: "RUN_AGENT",
+        userMessage: text,
+        targetPane: 1,
+        overrideModel: model1,
+      }).catch(() => {});
+    } catch (err) { /* ignore */ }
+
+    try {
+      chrome.runtime.sendMessage({
+        type: "RUN_AGENT",
+        userMessage: text,
+        targetPane: 2,
+        overrideModel: model2,
+      }).catch(() => {});
+    } catch (err) { /* ignore */ }
+
+  } else {
+    // Single pane
+    addMessage(1, "user", text);
+    try {
+      await chrome.runtime.sendMessage({
+        type: "RUN_AGENT",
+        userMessage: text,
+        targetPane: 1,
+      });
+    } catch (err) {
+      addMessage(1, "assistant", `Connection error: ${err.message}. Try reloading the extension.`, "error");
+      setLoading(false);
+    }
   }
 }
 
@@ -323,10 +414,10 @@ async function sendMessage() {
 
 sendBtn.addEventListener("click", () => {
   if (isAgentRunning) {
-    // Stop button pressed — reset UI state
-    // Note: the background loop will finish its current iteration naturally
-    finalizeStream();
-    removeThinking();
+    finalizeStream(1);
+    finalizeStream(2);
+    removeThinking(1);
+    removeThinking(2);
     setLoading(false);
   } else {
     sendMessage();
@@ -340,16 +431,19 @@ userInput.addEventListener("keydown", (e) => {
   }
 });
 
-// Auto-resize textarea
 userInput.addEventListener("input", () => {
   userInput.style.height = "auto";
   userInput.style.height = Math.min(userInput.scrollHeight, 120) + "px";
 });
 
 clearBtn.addEventListener("click", () => {
-  messagesEl.innerHTML = "";
-  currentTextEl = null;
-  toolElements  = {};
+  document.getElementById("messages-1").innerHTML = "";
+  const cm1 = document.getElementById("compare-messages-1");
+  const cm2 = document.getElementById("compare-messages-2");
+  if (cm1) cm1.innerHTML = "";
+  if (cm2) cm2.innerHTML = "";
+  paneState[1].textEl = null;
+  paneState[2].textEl = null;
   chrome.runtime.sendMessage({ type: "CLEAR_HISTORY" }).catch(() => {});
   showWelcome();
 });
@@ -361,10 +455,11 @@ settingsBtn.addEventListener("click", () => {
 // ── WELCOME MESSAGE ───────────────────────────────────────────
 
 function showWelcome() {
-  addMessage("assistant",
+  addMessage(1, "assistant",
     "👋 Hi! I'm your NIM Browser Assistant powered by NVIDIA.\n\n" +
     "I can read this page, click things, fill forms, and navigate the web for you.\n\n" +
-    "Try:\n• \"Summarize this page\"\n• \"Search the web for latest AI news\"\n• \"Fill in the contact form\""
+    "Try:\n• \"Summarize this page\"\n• \"Search the web for latest AI news\"\n• \"Fill in the contact form\"\n\n" +
+    "💡 Tip: Click the ⊞ icon to enter Compare Mode and evaluate two models side-by-side."
   );
 }
 

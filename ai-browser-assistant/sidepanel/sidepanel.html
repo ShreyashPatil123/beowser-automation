@@ -8,30 +8,113 @@
   </head>
   <body>
     <div id="app">
-
       <!-- ── HEADER ── -->
       <header id="header" class="header">
         <div class="header-logo">
           <span class="logo-icon">
-            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M12 2L14.5 9H22L16 13.5L18 21L12 16.5L6 21L8 13.5L2 9H9.5L12 2Z"
-                    fill="#0BC5EA" stroke="#0694B8" stroke-width="0.5"/>
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M12 2L14.5 9H22L16 13.5L18 21L12 16.5L6 21L8 13.5L2 9H9.5L12 2Z"
+                fill="#0BC5EA"
+                stroke="#0694B8"
+                stroke-width="0.5"
+              />
             </svg>
           </span>
           <span class="logo-text">NIM Assistant</span>
         </div>
         <div class="header-controls">
-          <span id="model-badge" class="model-badge" title="Current model"></span>
-          <button id="settings-btn" class="icon-btn" title="Settings" aria-label="Open settings">
+          <span
+            id="model-badge"
+            class="model-badge"
+            title="Current model"
+          ></span>
+          <button
+            id="compare-toggle"
+            class="icon-btn compare-toggle-btn"
+            title="Toggle Compare Mode"
+            aria-label="Toggle compare mode"
+          >
             <svg width="15" height="15" viewBox="0 0 20 20" fill="currentColor">
-              <path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd" />
+              <path
+                d="M3 4a1 1 0 011-1h4a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm8 0a1 1 0 011-1h4a1 1 0 011 1v12a1 1 0 01-1 1h-12a1 1 0 01-1-1V4z"
+              />
+            </svg>
+          </button>
+          <button
+            id="settings-btn"
+            class="icon-btn"
+            title="Settings"
+            aria-label="Open settings"
+          >
+            <svg width="15" height="15" viewBox="0 0 20 20" fill="currentColor">
+              <path
+                fill-rule="evenodd"
+                d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z"
+                clip-rule="evenodd"
+              />
             </svg>
           </button>
         </div>
       </header>
 
-      <!-- ── MESSAGES ── -->
-      <div id="messages" class="messages" role="log" aria-live="polite" aria-label="Conversation"></div>
+      <!-- ── SINGLE PANE (default) ── -->
+      <div id="single-pane" class="pane-container single-mode">
+        <div
+          id="messages-1"
+          class="messages"
+          role="log"
+          aria-live="polite"
+          aria-label="Conversation"
+        ></div>
+      </div>
+
+      <!-- ── COMPARE PANES (hidden by default) ── -->
+      <div
+        id="compare-pane"
+        class="pane-container compare-mode"
+        style="display: none"
+      >
+        <div class="compare-column">
+          <div class="compare-header">
+            <select
+              id="compare-model-1"
+              class="compare-model-select"
+              aria-label="Model for Pane 1"
+            ></select>
+            <span class="pane-label">Pane A</span>
+          </div>
+          <div
+            id="compare-messages-1"
+            class="messages"
+            role="log"
+            aria-live="polite"
+            aria-label="Pane A Conversation"
+          ></div>
+        </div>
+        <div class="compare-divider"></div>
+        <div class="compare-column">
+          <div class="compare-header">
+            <select
+              id="compare-model-2"
+              class="compare-model-select"
+              aria-label="Model for Pane 2"
+            ></select>
+            <span class="pane-label">Pane B</span>
+          </div>
+          <div
+            id="compare-messages-2"
+            class="messages"
+            role="log"
+            aria-live="polite"
+            aria-label="Pane B Conversation"
+          ></div>
+        </div>
+      </div>
 
       <!-- ── INPUT ── -->
       <div class="input-area">
@@ -42,13 +125,25 @@
             rows="2"
             aria-label="Type your message"
           ></textarea>
-          <button id="send-btn" class="send-btn" title="Send (Enter)" aria-label="Send message">
+          <button
+            id="send-btn"
+            class="send-btn"
+            title="Send (Enter)"
+            aria-label="Send message"
+          >
             <span id="send-icon">
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
-                   stroke="currentColor" stroke-width="2.5"
-                   stroke-linecap="round" stroke-linejoin="round">
-                <line x1="22" y1="2" x2="11" y2="13"/>
-                <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+              <svg
+                width="17"
+                height="17"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <line x1="22" y1="2" x2="11" y2="13" />
+                <polygon points="22 2 15 22 11 13 2 9 22 2" />
               </svg>
             </span>
           </button>
@@ -56,10 +151,11 @@
         <div class="input-hints">
           <span class="hint">↵ Send</span>
           <span class="hint">Shift+↵ New line</span>
-          <button id="clear-btn" class="text-btn" aria-label="Clear chat">Clear chat</button>
+          <button id="clear-btn" class="text-btn" aria-label="Clear chat">
+            Clear chat
+          </button>
         </div>
       </div>
-
     </div>
     <script src="sidepanel.js"></script>
   </body>

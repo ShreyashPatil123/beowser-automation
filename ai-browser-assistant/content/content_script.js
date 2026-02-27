@@ -5,7 +5,7 @@
 
 function stripNullBytes(str) {
   if (!str) return str;
-  return str.replace(/[\u0000-\u001f]/g, "");
+  return str.replace(/\x00/g, "");
 }
 
 function extractPageContext() {
